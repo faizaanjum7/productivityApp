@@ -61,7 +61,7 @@ const PlanningView: React.FC<PlanningViewProps> = ({ user, onPlanGenerated }) =>
                 focusTasks,
                 workPattern,
                 preferredMode,
-                unit: preferredMode === 'Timeflow' ? 'minutes' : unit,
+                unit: unit,
                 learnedDurations,
                 environments: user.environments.map(({ id, name }) => ({ id, name })),
             });
@@ -119,10 +119,22 @@ const PlanningView: React.FC<PlanningViewProps> = ({ user, onPlanGenerated }) =>
                             </div>
                         </div>
                          <div>
-                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Measure your quota in?</label>
-                            <div className={`flex p-1 rounded-lg ${preferredMode === 'Quota' ? 'bg-gray-100 dark:bg-gray-700' : 'bg-gray-200 dark:bg-gray-800'}`}>
-                                <button type="button" onClick={() => setUnit('minutes')} disabled={preferredMode !== 'Quota'} className={`flex-1 py-2 text-sm rounded-md transition ${unit === 'minutes' && preferredMode === 'Quota' ? 'bg-white dark:bg-gray-800 shadow text-indigo-500' : ''} disabled:cursor-not-allowed disabled:text-gray-400`}>Minutes</button>
-                                <button type="button" onClick={() => setUnit('pomodoros')} disabled={preferredMode !== 'Quota'} className={`flex-1 py-2 text-sm rounded-md transition ${unit === 'pomodoros' && preferredMode === 'Quota' ? 'bg-white dark:bg-gray-800 shadow text-indigo-500' : ''} disabled:cursor-not-allowed disabled:text-gray-400`}>Pomodoros</button>
+                            <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Measure time in</label>
+                            <div className="flex p-1 rounded-lg bg-gray-100 dark:bg-gray-700">
+                                <button 
+                                    type="button" 
+                                    onClick={() => setUnit('minutes')} 
+                                    className={`flex-1 py-2 text-sm rounded-md transition ${unit === 'minutes' ? 'bg-white dark:bg-gray-800 shadow text-indigo-500' : ''}`}
+                                >
+                                    Minutes
+                                </button>
+                                <button 
+                                    type="button" 
+                                    onClick={() => setUnit('pomodoros')} 
+                                    className={`flex-1 py-2 text-sm rounded-md transition ${unit === 'pomodoros' ? 'bg-white dark:bg-gray-800 shadow text-indigo-500' : ''}`}
+                                >
+                                    Pomodoros
+                                </button>
                             </div>
                         </div>
                     </div>

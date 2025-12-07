@@ -11,10 +11,8 @@ export default defineConfig(({ mode }) => {
       },
       plugins: [react()],
       base: "/",
-      define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
-      },
+      // Environment variables with VITE_ prefix are automatically exposed to your Vite-processed code
+      // No need to manually define them here unless you need to process them
       resolve: {
         alias: {
           '@': path.resolve(__dirname, '.'),

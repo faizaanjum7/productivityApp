@@ -1,7 +1,12 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { DailyPlan, Task } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const apiKey = import.meta.env.VITE_API_KEY;
+if (!apiKey) {
+  console.error("API key is not set. Please check your .env file");
+}
+
+const ai = new GoogleGenAI({ apiKey });
 
 interface PlanOptions {
     dayType: 'Productive' | 'Lazy' | 'Creative' | 'Reset';
@@ -51,6 +56,7 @@ interface ScheduleOptions {
     tasks: Pick<Task, 'id' | 'text' | 'duration'>[];
     startTime: string;
     workPattern: string;
+    unit: 'minutes' | 'pomodoros';
 }
 
 const timeflowScheduleSchema = {
@@ -66,10 +72,10 @@ const timeflowScheduleSchema = {
     },
 };
 
-export const generateTimeflowSchedule = async (options: ScheduleOptions): Promise<{id: string, plannedStartTime: string}[] | null> => {
-    const { tasks, startTime, workPattern } = options;
+export const generateTimeflowSchedule = async (options: ScheduleOptions): Promise<{id: string, plannedStartTime:string}[] | null> => {
+    const { tasks, startTime, workPattern, unit } = options;
 
-    const taskList = tasks.map(t => `- Task: "${t.text}" (ID: ${t.id}, Duration: ${t.duration} minutes)`).join('\n');
+    const taskList = tasks.map(t => `- Task: "${t.text}" (ID: ${t.id}, Duration: ${t.duration} ${unit === 'pomodoros' ? 'pomodoros (25 min work + 5 min break each)' : 'minutes'})`).join('\n');
 
     const prompt = `
         You are Skylar, an expert productivity assistant. Your goal is to create a Timeflow schedule for a user's existing list of tasks, starting from a specific time.
@@ -79,11 +85,12 @@ export const generateTimeflowSchedule = async (options: ScheduleOptions): Promis
         ${taskList}
         - The schedule must begin at or after: ${startTime}
         - The user's preferred work pattern is: ${workPattern}. Please insert breaks between tasks accordingly.
+        ${unit === 'pomodoros' ? "- IMPORTANT: Each pomodoro is 25 minutes of work followed by a 5-minute break. When scheduling, account for both work and break times." : ""}
         
         Instructions:
         1.  Create a realistic schedule for all the tasks provided.
         2.  Assign a 'plannedStartTime' in HH:MM format for each task.
-        3.  Respect the task durations and insert breaks based on the work pattern.
+        3.  Respect the task durations (including pomodoro breaks if applicable) and insert breaks based on the work pattern.
         4.  Return ONLY a JSON object containing a 'tasks' array. Each object in the array must contain the original 'id' of the task and its new 'plannedStartTime'.
     `;
     

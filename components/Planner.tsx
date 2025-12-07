@@ -207,6 +207,16 @@ const TimeflowView: React.FC<PlannerProps> = (props) => {
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const [menuTaskId, setMenuTaskId] = useState<string | null>(null);
 
+    // Convert pomodoros to minutes if needed
+    const getDurationInMinutes = (task: Task) => {
+        return plan.unit === 'pomodoros' ? task.duration * 30 : task.duration; // 25 min work + 5 min break = 30 min per pomodoro
+    };
+    
+    // Get work duration only (without breaks)
+    const getWorkDuration = (task: Task) => {
+        return plan.unit === 'pomodoros' ? task.duration * 25 : task.duration;
+    };
+
     const handleUpdateTask = (updatedTask: Task) => {
         const updatedTasks = plan.tasks.map(t => t.id === updatedTask.id ? updatedTask : t);
         onUpdatePlan({ ...plan, tasks: updatedTasks });
@@ -227,15 +237,32 @@ const TimeflowView: React.FC<PlannerProps> = (props) => {
         }
     };
     
+    const now = new Date();
+    const currentTimeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    
     const sortedTasks = [...plan.tasks]
-        .filter(task => task.environmentId === activeEnvironmentId && task.plannedStartTime && task.id !== activeFocusTaskId)
+        .filter(task => {
+            if (task.environmentId !== activeEnvironmentId || !task.plannedStartTime || task.id === activeFocusTaskId) {
+                return false;
+            }
+            
+            // Only include tasks that are in the future or current time
+            const taskTime = task.plannedStartTime;
+            return taskTime >= currentTimeStr;
+        })
         .sort((a, b) => (a.plannedStartTime || "23:59").localeCompare(b.plannedStartTime || "23:59"));
     
-    const formatDisplayTime = (timeStr: string) => {
+    const formatDisplayTime = (timeStr: string, duration: number = 0) => {
         const [hours, minutes] = timeStr.split(':');
-        const date = new Date();
-        date.setHours(parseInt(hours), parseInt(minutes));
-        return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        const startDate = new Date();
+        startDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+        
+        // Use getDurationInMinutes which includes breaks for pomodoros
+        const endDate = new Date(startDate.getTime() + (duration * 60 * 1000));
+        
+        const formatTime = (date: Date) => date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        
+        return `${formatTime(startDate)} - ${formatTime(endDate)}`;
     }
 
     return (
@@ -259,8 +286,10 @@ const TimeflowView: React.FC<PlannerProps> = (props) => {
                                 />
                              </div>
                              <div className="relative flex-grow pl-4">
-                                <div className="absolute top-3 -left-2 w-4 h-4 bg-white dark:bg-gray-700 border-2 rounded-full" style={{borderColor: timelineColor}}></div>
-                                {index < sortedTasks.length && <div className="h-full w-0.5 absolute top-3 -left-0" style={{backgroundColor: timelineColor, minHeight: 'calc(100% + 0.25rem)'}}></div>}
+                                <div className="absolute top-4 -left-2 w-3 h-3 rounded-full z-10" style={{backgroundColor: timelineColor}}></div>
+                                {index < sortedTasks.length - 1 && (
+                                    <div className="absolute top-7 -left-[3px] w-0.5 bottom-0" style={{backgroundColor: timelineColor}}></div>
+                                )}
                                 
                                 <div className="p-3 bg-gray-100 dark:bg-gray-900/50 rounded-lg space-y-2 border border-gray-200 dark:border-gray-700">
                                     <input 
@@ -295,12 +324,20 @@ const TimeflowView: React.FC<PlannerProps> = (props) => {
                 return(
                 <div key={task.id} className={`flex items-start gap-3 group transition-opacity ${isCompleted ? 'opacity-60' : ''}`}>
                     <div className="text-right flex-shrink-0 w-20 pt-3">
-                         <p className={`text-sm font-semibold ${isCompleted ? 'text-gray-500 dark:text-gray-400' : 'text-gray-700 dark:text-gray-300'}`}>{formatDisplayTime(task.plannedStartTime)}</p>
-                         <p className="text-xs text-gray-500 dark:text-gray-400">{task.duration} min</p>
+                         <p className={`text-sm font-semibold ${isCompleted ? 'text-gray-500 dark:text-gray-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                            {formatDisplayTime(task.plannedStartTime, getDurationInMinutes(task))}
+                         </p>
+                         <p className="text-xs text-gray-500 dark:text-gray-400">
+                            {plan.unit === 'pomodoros' 
+                                ? `${task.duration} pomodoro${task.duration !== 1 ? 's' : ''} (${getWorkDuration(task)} min work + ${task.duration * 5} min breaks)`
+                                : `${task.duration} min`}
+                         </p>
                     </div>
                     <div className="relative flex-grow pl-4 py-2">
-                        <div className="absolute top-4 -left-2 w-4 h-4 bg-white dark:bg-gray-900 border-2 rounded-full" style={{borderColor: timelineColor}}></div>
-                        {index < sortedTasks.length - 1 && <div className="h-full w-0.5 absolute top-4 -left-0 transition-colors" style={{backgroundColor: timelineColor, minHeight: 'calc(100% - 0.5rem)'}}></div>}
+                        <div className="absolute top-4 -left-2 w-3 h-3 rounded-full z-10" style={{backgroundColor: timelineColor}}></div>
+                        {index < sortedTasks.length - 1 && (
+                            <div className="absolute top-7 -left-[3px] w-0.5 bottom-0" style={{backgroundColor: timelineColor}}></div>
+                        )}
                         
                         <div 
                             className="p-3 bg-gray-50 dark:bg-gray-700/50 rounded-lg border-l-4 transition-all" 
@@ -362,27 +399,54 @@ const Planner: React.FC<PlannerProps> = (props) => {
 
     const handleGenerateSchedule = async () => {
         setIsGeneratingSchedule(true);
-        const uncompletedTasks = props.plan.tasks.filter(t => !t.completed && t.duration > 0);
+        
+        // Get current time and round up to next 5 minutes
+        const now = new Date();
+        const minutesToAdd = 5 - (now.getMinutes() % 5);
+        now.setMinutes(now.getMinutes() + minutesToAdd);
+        const startTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+        
+        // Filter out tasks that are already in the past
+        const uncompletedTasks = props.plan.tasks
+            .filter(t => {
+                if (t.completed || t.duration <= 0) return false;
+                // If task already has a time, check if it's in the future
+                if (t.plannedStartTime) {
+                    return t.plannedStartTime >= startTime;
+                }
+                return true;
+            })
+            .map(task => ({
+                ...task,
+                // Keep the original duration, the scheduling service will handle the conversion
+                duration: task.duration
+            }));
 
         if (uncompletedTasks.length > 0) {
-            const now = new Date();
-            const startTime = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+            // Use the start time we calculated earlier
             
             const schedule = await generateTimeflowSchedule({
                 tasks: uncompletedTasks,
                 startTime: startTime,
-                workPattern: '50 min work, 10 min break', // Default work pattern
+                workPattern: '50 min work, 10 min break',
+                unit: props.plan.unit
             });
 
             if (schedule) {
                 const scheduledTasksMap = new Map(schedule.map(t => [t.id, t.plannedStartTime]));
-                const updatedTasks = props.plan.tasks.map(task => ({
-                    ...task,
-                    plannedStartTime: scheduledTasksMap.get(task.id) || task.plannedStartTime,
-                }));
+                const updatedTasks = props.plan.tasks.map(task => {
+                    // Keep original duration as it was before scheduling
+                    const duration = task.duration;
+                    return {
+                        ...task,
+                        duration,
+                        plannedStartTime: scheduledTasksMap.get(task.id) || task.plannedStartTime,
+                    };
+                });
                 props.onUpdatePlan({ ...props.plan, tasks: updatedTasks });
             } else {
-                // TODO: Handle error case, e.g., show a notification to the user
+                // Show error to user
+                alert("Failed to generate schedule. Please try again.");
             }
         }
         setIsGeneratingSchedule(false);
