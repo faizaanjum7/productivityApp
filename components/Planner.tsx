@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { DailyPlan, Task, Environment } from '../types';
-import { ClockIcon, ListBulletIcon, PlayIcon, EditIcon, CheckIcon, SparklesIcon, TrashIcon, CloseIcon, EllipsisHorizontalIcon, ArrowRightIcon } from './icons';
+import { ClockIcon, ListBulletIcon, PlayIcon, EditIcon, CheckIcon, SparklesIcon, TrashIcon, CloseIcon, EllipsisHorizontalIcon, ArrowRightIcon, PlusIcon } from './icons';
 import { generateTimeflowSchedule } from '../services/geminiService';
 
 // Helper to convert hex to rgba for the glow effect
@@ -110,6 +110,39 @@ const QuotaView: React.FC<PlannerProps> = (props) => {
     const { plan, onUpdatePlan, themeColor, environments, activeEnvironmentId, onMoveTask, activeFocusTaskId, onStartFocus } = props;
     const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
     const [menuTaskId, setMenuTaskId] = useState<string | null>(null);
+    const [newTaskText, setNewTaskText] = useState('');
+    
+    const [durationType, setDurationType] = useState<'minutes' | 'pomodoros'>('minutes');
+    const [durationValue, setDurationValue] = useState('1');
+
+    const handleAddTask = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newTaskText.trim()) return;
+        
+        const duration = parseInt(durationValue, 10) || 1;
+        
+        const newTask: Task = {
+            id: Date.now().toString(),
+            text: newTaskText.trim(),
+            completed: false,
+            subtasks: [],
+            duration: durationType === 'pomodoros' ? duration : duration,
+            actualDuration: 0,
+            actualPomodoros: 0,
+            environmentId: activeEnvironmentId
+        };
+        
+        onUpdatePlan({ ...plan, tasks: [...plan.tasks, newTask] });
+        setNewTaskText('');
+        setDurationValue('1');
+    };
+    
+    const handleDeleteTask = (taskId: string) => {
+        onUpdatePlan({
+            ...plan,
+            tasks: plan.tasks.filter(t => t.id !== taskId)
+        });
+    };
 
     const handleSaveDuration = (taskId: string, newDuration: number) => {
         const updatedTasks = plan.tasks.map(t =>
@@ -164,12 +197,28 @@ const QuotaView: React.FC<PlannerProps> = (props) => {
                                 >
                                     <PlayIcon className="w-4 h-4" />
                                 </button>
-                                <div className="relative opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button onClick={() => setMenuTaskId(prev => prev === task.id ? null : task.id)} className="p-1 text-gray-400 hover:text-indigo-500">
+                                <button 
+                                    onClick={() => handleDeleteTask(task.id)}
+                                    className="p-1.5 text-gray-400 hover:text-red-500 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                                    aria-label={`Delete task ${task.text}`}
+                                >
+                                    <TrashIcon className="w-4 h-4" />
+                                </button>
+                                <div className="relative">
+                                    <button 
+                                        onClick={() => setMenuTaskId(prev => prev === task.id ? null : task.id)} 
+                                        className="p-1.5 text-gray-400 hover:text-indigo-500 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                        aria-label="More options"
+                                    >
                                         <EllipsisHorizontalIcon className="w-5 h-5" />
                                     </button>
                                     {menuTaskId === task.id && (
-                                        <MoveMenu task={task} environments={environments} onMoveTask={onMoveTask} onClose={() => setMenuTaskId(null)} />
+                                        <MoveMenu 
+                                            task={task} 
+                                            environments={environments} 
+                                            onMoveTask={onMoveTask} 
+                                            onClose={() => setMenuTaskId(null)} 
+                                        />
                                     )}
                                 </div>
                             </div>
@@ -206,6 +255,40 @@ const TimeflowView: React.FC<PlannerProps> = (props) => {
     const { plan, onUpdatePlan, themeColor, environments, activeEnvironmentId, onMoveTask, activeFocusTaskId, onStartFocus } = props;
     const [editingTask, setEditingTask] = useState<Task | null>(null);
     const [menuTaskId, setMenuTaskId] = useState<string | null>(null);
+    const [durationType, setDurationType] = useState<'minutes' | 'pomodoros'>('minutes');
+    const [durationValue, setDurationValue] = useState('30');
+    const [newTaskText, setNewTaskText] = useState('');
+    
+    const handleAddTask = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newTaskText.trim()) return;
+        
+        const now = new Date();
+        const hours = now.getHours().toString().padStart(2, '0');
+        const minutes = now.getMinutes().toString().padStart(2, '0');
+        const currentTime = `${hours}:${minutes}`;
+        
+        const duration = parseInt(durationValue, 10) || (durationType === 'pomodoros' ? 1 : 30);
+        
+        const newTask: Task = {
+            id: Date.now().toString(),
+            text: newTaskText.trim(),
+            completed: false,
+            subtasks: [],
+            duration: durationType === 'pomodoros' ? duration : duration,
+            plannedStartTime: currentTime,
+            actualDuration: 0,
+            actualPomodoros: 0,
+            environmentId: activeEnvironmentId
+        };
+        
+        onUpdatePlan({ 
+            ...plan, 
+            tasks: [...plan.tasks, newTask] 
+        });
+        setNewTaskText('');
+        setDurationValue('30');
+    };
 
     // Convert pomodoros to minutes if needed
     const getDurationInMinutes = (task: Task) => {
@@ -267,6 +350,41 @@ const TimeflowView: React.FC<PlannerProps> = (props) => {
 
     return (
          <div className="space-y-1 max-h-[28rem] overflow-y-auto pr-2 -ml-4">
+            <form onSubmit={handleAddTask} className="space-y-2 mb-4 ml-4">
+                <div className="flex gap-2">
+                    <input
+                        type="text"
+                        value={newTaskText}
+                        onChange={(e) => setNewTaskText(e.target.value)}
+                        placeholder="Add a new scheduled task..."
+                        className="flex-grow px-3 py-2 text-sm bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:outline-none"
+                    />
+                    <button 
+                        type="submit"
+                        className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                    >
+                        Add
+                    </button>
+                </div>
+                <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                    <span>Duration:</span>
+                    <input
+                        type="number"
+                        min="1"
+                        value={durationValue}
+                        onChange={(e) => setDurationValue(e.target.value)}
+                        className="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    />
+                    <select
+                        value={durationType}
+                        onChange={(e) => setDurationType(e.target.value as 'minutes' | 'pomodoros')}
+                        className="text-sm border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    >
+                        <option value="minutes">Minutes</option>
+                        <option value="pomodoros">Pomodoros</option>
+                    </select>
+                </div>
+            </form>
             {sortedTasks.length > 0 ? sortedTasks.map((task, index) => {
                 if(!task.plannedStartTime) return null;
                 const isEditing = editingTask?.id === task.id;
@@ -354,8 +472,20 @@ const TimeflowView: React.FC<PlannerProps> = (props) => {
                                     <p className={`text-sm font-medium text-gray-800 dark:text-gray-200 truncate ${isCompleted ? 'line-through' : ''}`}>{task.text}</p>
                                 </div>
                                 <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button onClick={() => setEditingTask(task)} className="p-1 text-gray-400 hover:text-indigo-500"><EditIcon className="w-4 h-4"/></button>
-                                    <button onClick={() => handleDeleteTask(task.id)} className="p-1 text-gray-400 hover:text-red-500"><TrashIcon className="w-4 h-4"/></button>
+                                    <button 
+                                        onClick={() => setEditingTask(task)} 
+                                        className="p-1.5 text-gray-400 hover:text-indigo-500 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                        aria-label={`Edit task ${task.text}`}
+                                    >
+                                        <EditIcon className="w-4 h-4"/>
+                                    </button>
+                                    <button 
+                                        onClick={() => onUpdatePlan({ ...plan, tasks: plan.tasks.filter(t => t.id !== task.id) })}
+                                        className="p-1.5 text-gray-400 hover:text-red-500 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                                        aria-label={`Delete task ${task.text}`}
+                                    >
+                                        <TrashIcon className="w-4 h-4"/>
+                                    </button>
                                     <div className="relative">
                                         <button onClick={() => setMenuTaskId(prev => prev === task.id ? null : task.id)} className="p-1 text-gray-400 hover:text-indigo-500">
                                             <EllipsisHorizontalIcon className="w-5 h-5" />
@@ -388,14 +518,14 @@ const TimeflowView: React.FC<PlannerProps> = (props) => {
     );
 };
 
-
 const Planner: React.FC<PlannerProps> = (props) => {
     const [isGeneratingSchedule, setIsGeneratingSchedule] = useState(false);
+    const [showAddTaskModal, setShowAddTaskModal] = useState(false);
+    const [scheduleExists, setScheduleExists] = useState(false);
 
-    const scheduleExists = useMemo(() => 
-        props.plan.tasks.some(t => t.plannedStartTime), 
-        [props.plan.tasks]
-    );
+    useEffect(() => {
+        setScheduleExists(props.plan.tasks.some(t => t.plannedStartTime));
+    }, [props.plan.tasks]);
 
     const handleGenerateSchedule = async () => {
         setIsGeneratingSchedule(true);
@@ -452,9 +582,38 @@ const Planner: React.FC<PlannerProps> = (props) => {
         setIsGeneratingSchedule(false);
     };
 
+    const handleAddTask = (task: Omit<Task, 'id' | 'completed' | 'subtasks' | 'actualDuration' | 'actualPomodoros'>) => {
+        const newTask: Task = {
+            ...task,
+            id: Date.now().toString(),
+            completed: false,
+            subtasks: [],
+            actualDuration: 0,
+            actualPomodoros: 0,
+            environmentId: props.activeEnvironmentId
+        };
+        
+        const updatedPlan = {
+            ...props.plan,
+            tasks: [...props.plan.tasks, newTask]
+        };
+        
+        props.onUpdatePlan(updatedPlan);
+        setShowAddTaskModal(false);
+    };
+
     return (
         <div className="bg-white dark:bg-gray-800/50 p-6 rounded-2xl shadow-lg h-full">
-            <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Today's Plan</h2>
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold text-gray-800 dark:text-white">Today's Plan</h2>
+                <button 
+                    onClick={() => setShowAddTaskModal(true)}
+                    className="flex items-center gap-1 px-3 py-1 text-sm font-medium text-white bg-indigo-500 rounded-md hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                >
+                    <PlusIcon className="w-4 h-4" />
+                    Add
+                </button>
+            </div>
             <div className="space-y-6">
                 <div>
                     <div className="flex items-center gap-3 mb-4">
@@ -497,6 +656,171 @@ const Planner: React.FC<PlannerProps> = (props) => {
                         </div>
                     )}
                 </div>
+            </div>
+            
+            <AddTaskModal
+                isOpen={showAddTaskModal}
+                onClose={() => setShowAddTaskModal(false)}
+                onSubmit={handleAddTask}
+                mode={props.plan.mode === 'Quota' ? 'quota' : 'timeflow'}
+            />
+        </div>
+    );
+};
+
+const AddTaskModal: React.FC<{
+    isOpen: boolean;
+    onClose: () => void;
+    onSubmit: (task: { 
+        text: string; 
+        duration: number; 
+        durationType: 'minutes' | 'pomodoros';
+        plannedStartTime?: string;
+        plannedEndTime?: string;
+    }) => void;
+    mode: 'quota' | 'timeflow';
+}> = ({ isOpen, onClose, onSubmit, mode }) => {
+    const [text, setText] = useState('');
+    const [taskType, setTaskType] = useState<'quota' | 'structured'>(mode === 'timeflow' ? 'structured' : 'quota');
+    const [duration, setDuration] = useState('30');
+    const [durationType, setDurationType] = useState<'minutes' | 'pomodoros'>('minutes');
+    const [startTime, setStartTime] = useState('09:00');
+    const [endTime, setEndTime] = useState('10:00');
+
+    if (!isOpen) return null;
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!text.trim()) return;
+        
+        const task = {
+            text: text.trim(),
+            duration: parseInt(duration) || 30,
+            durationType,
+            ...(taskType === 'structured' && { 
+                plannedStartTime: startTime,
+                plannedEndTime: endTime
+            })
+        };
+        
+        onSubmit(task);
+        setText('');
+    };
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl w-full max-w-md">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Add New Task</h3>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+                        <CloseIcon className="w-5 h-5" />
+                    </button>
+                </div>
+                
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Task Name</label>
+                        <input
+                            type="text"
+                            value={text}
+                            onChange={(e) => setText(e.target.value)}
+                            placeholder="Enter task name"
+                            className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                            autoFocus
+                            required
+                        />
+                    </div>
+                    
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                Task Type
+                            </label>
+                            <select
+                                value={taskType}
+                                onChange={(e) => setTaskType(e.target.value as 'quota' | 'structured')}
+                                className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                            >
+                                <option value="quota">Quota</option>
+                                <option value="structured">Structured</option>
+                            </select>
+                        </div>
+
+                        {taskType === 'structured' && (
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                        Start Time
+                                    </label>
+                                    <input
+                                        type="time"
+                                        value={startTime}
+                                        onChange={(e) => setStartTime(e.target.value)}
+                                        className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                        required
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                        End Time
+                                    </label>
+                                    <input
+                                        type="time"
+                                        value={endTime}
+                                        onChange={(e) => setEndTime(e.target.value)}
+                                        className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                        required
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    Duration
+                                </label>
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={duration}
+                                    onChange={(e) => setDuration(e.target.value)}
+                                    className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                    Duration Type
+                                </label>
+                                <select
+                                    value={durationType}
+                                    onChange={(e) => setDurationType(e.target.value as 'minutes' | 'pomodoros')}
+                                    className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                >
+                                    <option value="minutes">Minutes</option>
+                                    <option value="pomodoros">Pomodoros</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div className="flex justify-end gap-3 pt-2">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 border border-transparent rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                        >
+                            Add Task
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     );

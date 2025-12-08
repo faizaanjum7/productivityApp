@@ -11,9 +11,15 @@
   },
   "dependencies": {
     "@google/genai": "^1.28.0",
+    "@heroicons/react": "^2.2.0",
+    "@types/recharts": "^1.8.29",
+    "@types/uuid": "^10.0.0",
+    "date-fns": "^4.1.0",
     "lucide-react": "^0.556.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "recharts": "^3.5.1",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

@@ -47,6 +47,7 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
   const [timerValue, setTimerValue] = useState(0); // in seconds
   const [isTimerActive, setIsTimerActive] = useState(false);
   const [pomodoroCycle, setPomodoroCycle] = useState(0);
+  const [completedPomodoros, setCompletedPomodoros] = useState(0);
   
   const timerIntervalRef = useRef<number | null>(null);
   const endTimeRef = useRef<number | null>(null);
@@ -154,6 +155,7 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
         pomodoroCycle,
         timerValue,
         isTimerActive,
+        completedPomodoros,
         endTime: endTimeRef.current,
         startTime: startTimeRef.current,
         accumulated: accumulatedElapsedRef.current,
@@ -175,6 +177,7 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
       if (parsed.activeFocusTaskId) setActiveFocusTaskId(parsed.activeFocusTaskId);
       if (typeof parsed.pomodoroCycle === 'number') setPomodoroCycle(parsed.pomodoroCycle);
       if (typeof parsed.timerValue === 'number') setTimerValue(parsed.timerValue);
+      if (typeof parsed.completedPomodoros === 'number') setCompletedPomodoros(parsed.completedPomodoros);
       // restore refs
       endTimeRef.current = parsed.endTime ?? null;
       startTimeRef.current = parsed.startTime ?? null;
@@ -254,34 +257,63 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
                     });
                     props.updateUser({ ...user, environments: updatedEnvironments });
                   }
-                } catch (e) {}
+                } catch (e) {
+                  console.error('Error updating task completion status', e);
+                }
 
-          // desktop notification: pomodoro finished
-          try {
-            const taskText = dailyPlanRef.current.tasks.find(t => t.id === activeFocusTaskId)?.text;
-            showDesktopNotification('Pomodoro finished', taskText ? `Completed one pomodoro for: ${taskText}` : 'Pomodoro finished');
-          } catch (e) {}
-
+                // Increment completed pomodoros and update history
+                const newCompletedPomodoros = completedPomodoros + 1;
+                setCompletedPomodoros(newCompletedPomodoros);
+                
+                // Add to pomodoro history
+                const newPomodoroSession = {
+                  id: `pomodoro-${Date.now()}`,
+                  date: new Date().toISOString(),
+                  duration: 25, // 25 minutes per pomodoro
+                  taskId: activeFocusTaskId || null
+                };
+                
+                // Update user's pomodoro history
+                const updatedUser = {
+                  ...user,
+                  pomodoroHistory: [...user.pomodoroHistory, newPomodoroSession]
+                };
+                props.updateUser(updatedUser);
+                
+                // Update daily plan with completed pomodoros
+                if (dailyPlanRef.current) {
+                  updatePlan({
+                    ...dailyPlanRef.current,
+                    completedPomodoros: newCompletedPomodoros
+                  });
+                }
+                
                 const nextCycle = pomodoroCycle + 1;
                 setPomodoroCycle(nextCycle);
-                if(nextCycle % 4 === 0) {
-                    setFocusMode('long_break');
-                    setTimerValue(LONG_BREAK_TIME);
-                    endTimeRef.current = Date.now() + LONG_BREAK_TIME * 1000;
+                
+                if (nextCycle % 4 === 0) {
+                  setFocusMode('long_break');
+                  setTimerValue(LONG_BREAK_TIME);
+                  endTimeRef.current = Date.now() + LONG_BREAK_TIME * 1000;
                 } else {
-                    setFocusMode('short_break');
-                    setTimerValue(SHORT_BREAK_TIME);
-                    endTimeRef.current = Date.now() + SHORT_BREAK_TIME * 1000;
+                  setFocusMode('short_break');
+                  setTimerValue(SHORT_BREAK_TIME);
+                  endTimeRef.current = Date.now() + SHORT_BREAK_TIME * 1000;
                 }
-          setIsTimerActive(true); // Auto-start break
-          try { showDesktopNotification('Break started', nextCycle % 4 === 0 ? 'Long break started' : 'Short break started'); } catch (e) {}
-        } else if (focusMode?.includes('break')) {
-          setFocusMode(null);
-          // Don't reset active task, user can start next pomodoro
-          try { showDesktopNotification('Break ended', 'Break is over — ready to focus!'); } catch (e) {}
-        }
-            return;
-          }
+                
+                setIsTimerActive(true); // Auto-start break
+                try { 
+                  showDesktopNotification('Break started', nextCycle % 4 === 0 ? 'Long break started' : 'Short break started'); 
+                } catch (e) {}
+              } else if (focusMode?.includes('break')) {
+                setFocusMode(null);
+                // Don't reset active task, user can start next pomodoro
+                try { 
+                  showDesktopNotification('Break ended', 'Break is over — ready to focus!'); 
+                } catch (e) {}
+              }
+              return;
+            }
 
           setTimerValue(remaining);
         }
@@ -492,33 +524,77 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
       props.updateUser({ ...user, environments: updatedEnvironments });
   };
   
-  const handleCreateAdHocTask = async (taskString: string) => {
+  const handleCreateAdHocTask = async (taskString: string, targetEnvironmentId?: string) => {
     if (!taskString.trim()) return;
 
-    const envs = user.environments.map(({ id, name }) => ({ id, name }));
-    const parsedTask = await parseTaskAndAssignEnvironment(taskString, envs);
-
-    if (!parsedTask) return;
-
-    const newTask: Task = {
-      id: Date.now().toString(),
-      text: parsedTask.taskText,
+    // Generate a temporary ID for immediate UI feedback
+    const tempTaskId = `temp-${Date.now()}`;
+    let environmentId = targetEnvironmentId || activeEnvironment.id;
+    
+    // Create the task immediately in the current environment for instant feedback
+    const tempTask: Task = {
+      id: tempTaskId,
+      text: taskString.trim(),
       completed: false,
       subtasks: [],
       duration: 0,
       actualDuration: 0,
       actualPomodoros: 0,
-      environmentId: parsedTask.environmentId,
+      environmentId,
+      isProcessing: true // Add a flag to show processing state
     };
 
-    const updatedEnvironments = user.environments.map(env => {
-        if (env.id === parsedTask.environmentId) {
-            return { ...env, tasks: [...env.tasks, newTask] };
+    // Add the task immediately to the current environment
+    const environmentsWithTempTask = user.environments.map(env => 
+      env.id === environmentId 
+        ? { ...env, tasks: [...env.tasks, tempTask] } 
+        : env
+    );
+    
+    // Update the UI immediately
+    props.updateUser({ ...user, environments: environmentsWithTempTask });
+
+    // If no target environment is specified, try to detect it
+    if (!targetEnvironmentId) {
+      try {
+        const envs = user.environments.map(({ id, name }) => ({ id, name }));
+        const parsedTask = await parseTaskAndAssignEnvironment(taskString, envs);
+        
+        if (parsedTask && parsedTask.environmentId !== environmentId) {
+          environmentId = parsedTask.environmentId;
+          taskString = parsedTask.taskText; // Update task text if it had environment info
         }
-        return env;
+      } catch (error) {
+        console.error('Error detecting environment:', error);
+        // If there's an error, keep the task in the current environment
+      }
+    }
+
+    // Create the final task with the determined environment
+    const finalTask: Task = {
+      ...tempTask,
+      id: Date.now().toString(), // Replace temp ID with permanent one
+      text: taskString.trim(),
+      environmentId,
+      isProcessing: undefined // Remove the processing flag
+    };
+
+    // Update the task in the correct environment
+    const updatedEnvironments = user.environments.map(env => {
+      // Remove the temp task from its current environment
+      const tasksWithoutTemp = env.tasks.filter(t => t.id !== tempTaskId);
+      
+      // If this is the target environment, add the final task
+      if (env.id === environmentId) {
+        return { ...env, tasks: [...tasksWithoutTemp, finalTask] };
+      }
+      
+      return { ...env, tasks: tasksWithoutTemp };
     });
 
+    // Update the UI with the final state
     props.updateUser({ ...user, environments: updatedEnvironments });
+    return finalTask;
   };
   
   const handleAddRoutineTasks = (routineTasks: Pick<Task, 'text'>[]) => {

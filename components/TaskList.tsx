@@ -92,12 +92,18 @@ const TaskItem: React.FC<{
     };
     
     return (
-        <div className="p-3 bg-white dark:bg-gray-800/50 rounded-lg group transition-all duration-300 relative">
-            <div className="flex items-center justify-between">
+        <div className={`p-3 bg-white dark:bg-gray-800/50 rounded-lg group transition-all duration-300 relative ${task.isProcessing ? 'opacity-75' : ''}`}>
+            {task.isProcessing && (
+                <div className="absolute inset-0 bg-gray-100/50 dark:bg-gray-800/50 rounded-lg flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-500"></div>
+                </div>
+            )}
+            <div className={`flex items-center justify-between ${task.isProcessing ? 'opacity-50' : ''}`}>
                 <div className="flex items-center flex-grow min-w-0">
                     <input
                         type="checkbox"
                         checked={task.completed}
+                        disabled={task.isProcessing}
                         onChange={(e) => handleToggle(e.target.checked)}
                         className="h-5 w-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                         aria-labelledby={`task-${task.id}`}
@@ -217,16 +223,23 @@ const TaskList: React.FC<TaskListProps> = (props) => {
             {tasks.filter(t => t.completed).length} / {tasks.length} Done
         </span>
       </div>
-      <form onSubmit={handleFormSubmit} className="flex gap-2">
-        <input
-          type="text" value={newTaskText} onChange={(e) => setNewTaskText(e.target.value)}
-          placeholder="Add task... e.g., Read chapter 5 (Academics)"
-          className="flex-grow px-4 py-2 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-lg focus:border-indigo-500 focus:outline-none focus:ring-0 transition"
-          aria-label="New task input"
-        />
-        <button type="submit" className="px-4 py-2 font-semibold text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-offset-gray-900 transition-colors">
-          Add
-        </button>
+      <form onSubmit={handleFormSubmit} className="space-y-2">
+        <div className="flex gap-2">
+          <input
+            type="text" 
+            value={newTaskText} 
+            onChange={(e) => setNewTaskText(e.target.value)}
+            placeholder="Add task... e.g., Read chapter 5 (Academics)"
+            className="flex-grow px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:outline-none transition"
+            aria-label="New task input"
+          />
+          <button 
+            type="submit" 
+            className="px-4 py-2 font-semibold text-white bg-indigo-500 rounded-lg hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+          >
+            Add
+          </button>
+        </div>
       </form>
       <div className="space-y-2">
           {tasks.length > 0 ? tasks.map(task => (

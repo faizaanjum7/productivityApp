@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { User, DailyPlan, PomodoroSession, Task } from '../types';
-import { CloseIcon, ChartBarIcon, ClockIcon, CheckCircleIcon } from './icons';
+import { CloseIcon, ChartBarIcon, ClockIcon, CheckCircleIcon, CoffeeIcon } from './icons';
 
 interface EndDaySummaryProps {
   user: User;
@@ -45,9 +45,50 @@ const formatRangeLabel = (range: TimeRange) => {
 
 const EndDaySummary: React.FC<EndDaySummaryProps> = ({ user, onClose, dailyPlan }) => {
   const [timeRange, setTimeRange] = useState<TimeRange>('today');
+  const [isMounted, setIsMounted] = useState(false);
   
-  const summary = useMemo(() => {
-    const { start: startDate, end: endDate } = getTimeRangeDates(timeRange);
+  // Track previous values to prevent unnecessary recalculations
+  const prevDeps = useRef<{user: User | null, dailyPlan: DailyPlan | null | undefined, timeRange: TimeRange}>({
+    user: null,
+    dailyPlan: null,
+    timeRange: 'today'
+  });
+  
+  const [currentSummary, setCurrentSummary] = useState(() => ({
+    tasksCompleted: 0,
+    focusTime: 0,
+    completedPomodoros: 0,
+    estimatedPomodoros: 0,
+    estimatedTimeMinutes: 0,
+    actualPomodoros: 0,
+    actualTimeMinutes: 0,
+    randomPraise: 'Keep up the good work!',
+    actualTime: 0,
+    estimatedTime: 0
+  }));
+
+  useEffect(() => {
+    // Skip calculation on initial render
+    if (!isMounted) {
+      setIsMounted(true);
+      return;
+    }
+    
+    // Check if dependencies have actually changed
+    if (
+      prevDeps.current.user === user && 
+      prevDeps.current.dailyPlan === dailyPlan && 
+      prevDeps.current.timeRange === timeRange
+    ) {
+      return; // Skip if no changes
+    }
+    
+    // Update previous dependencies
+    prevDeps.current = { user, dailyPlan, timeRange };
+    
+    // Calculate the summary
+    const calculateSummary = () => {
+      const { start: startDate, end: endDate } = getTimeRangeDates(timeRange);
     const startIso = startDate.toISOString().split('T')[0];
     const endIso = endDate.toISOString().split('T')[0];
 
@@ -58,7 +99,15 @@ const EndDaySummary: React.FC<EndDaySummaryProps> = ({ user, onClose, dailyPlan 
     user.environments.forEach(env => {
       env.tasks.forEach(task => {
         if (task.completed) {
-          allCompletedTasks.push({ ...task, environmentId: env.id });
+          allCompletedTasks.push({ 
+            ...task, 
+            environmentId: env.id,
+            // Ensure all required task properties have default values
+            subtasks: task.subtasks || [],
+            actualPomodoros: task.actualPomodoros || 0,
+            actualDuration: task.actualDuration || 0,
+            duration: task.duration || 0
+          });
         }
       });
     });
@@ -82,37 +131,68 @@ const EndDaySummary: React.FC<EndDaySummaryProps> = ({ user, onClose, dailyPlan 
       return true;
     });
 
-    // Calculate focus time from pomodoro sessions
-    const focusTime = user.pomodoroHistory
-      .filter(session => {
+    // Calculate focus time and completed pomodoros from pomodoro sessions
+    let totalFocusTime = 0;
+    let completedPomodoros = 0;
+    
+    user.pomodoroHistory.forEach(session => {
+      const sessionDate = new Date(session.date);
+      if (sessionDate >= startDate && sessionDate < endDate) {
+        totalFocusTime += session.duration;
+        completedPomodoros++;
+      }
+    });
+
+    // Add any additional focus time from the current session if it's today
+    if (timeRange === 'today' && dailyPlan?.completedPomodoros) {
+      const alreadyCountedPomodoros = user.pomodoroHistory.filter(session => {
         const sessionDate = new Date(session.date);
         return sessionDate >= startDate && sessionDate < endDate;
-      })
-      .reduce((total, session) => total + session.duration, 0);
+      }).length;
+      
+      const additionalPomodoros = dailyPlan.completedPomodoros - alreadyCountedPomodoros;
+      if (additionalPomodoros > 0) {
+        completedPomodoros += additionalPomodoros;
+        totalFocusTime += additionalPomodoros * 25; // 25 minutes per pomodoro
+      }
+    }
 
-    // Calculate total estimated time for completed tasks
-    const estimatedTime = filteredTasks.reduce(
-      (total, task) => total + (task.duration || 0), 0
+    // Calculate total estimated time in pomodoros and minutes
+    const estimatedPomodoros = filteredTasks.reduce(
+      (total, task) => total + Math.ceil((task.duration || 0) / 25), 0
     );
+    const estimatedTimeMinutes = estimatedPomodoros * 25;
 
-    // Calculate actual time spent from session logs
-    const actualTime = user.sessionLogs
-      .filter(log => {
-        const logDate = new Date(log.startTime);
-        return logDate >= startDate && logDate < endDate;
-      })
-      .reduce((total, log) => total + log.duration, 0);
+    // Calculate actual time in pomodoros and minutes
+    const actualPomodoros = completedPomodoros;
+    const actualTimeMinutes = actualPomodoros * 25;
 
-    const randomPraise = user.praisePhrases[Math.floor(Math.random() * user.praisePhrases.length)];
+    // Calculate total focus time (from pomodoro history + current session)
+    const totalFocusTimeMinutes = completedPomodoros * 25;
 
-    return { 
-      tasksCompleted: filteredTasks.length, 
-      focusTime, 
-      estimatedTime,
-      actualTime,
-      randomPraise 
+    const defaultPraise = 'Great job today! 🎉';
+    const randomPraise = user.praisePhrases && user.praisePhrases.length > 0 
+      ? user.praisePhrases[Math.floor(Math.random() * user.praisePhrases.length)]
+      : defaultPraise;
+
+      setCurrentSummary({ 
+        tasksCompleted: filteredTasks.length, 
+        focusTime: totalFocusTimeMinutes,
+        completedPomodoros,
+        estimatedPomodoros,
+        estimatedTimeMinutes,
+        actualPomodoros,
+        actualTimeMinutes,
+        randomPraise,
+        actualTime: actualTimeMinutes,
+        estimatedTime: estimatedTimeMinutes
+      });
     };
-  }, [user, dailyPlan, timeRange]);
+
+    // Use requestAnimationFrame for better performance
+    const frameId = requestAnimationFrame(calculateSummary);
+    return () => cancelAnimationFrame(frameId);
+  }, [user, dailyPlan, timeRange, isMounted]);
 
   const formatTime = (minutes: number) => {
     if (minutes < 60) return `${minutes}m`;
@@ -155,29 +235,42 @@ const EndDaySummary: React.FC<EndDaySummaryProps> = ({ user, onClose, dailyPlan 
           </div>
         </div>
 
-        <p className="text-gray-500 dark:text-gray-400 text-center mb-6">
-          {summary.randomPraise}
+        <p className="text-gray-500 dark:text-gray-400 text-center mb-6 animate-pulse">
+          {currentSummary.randomPraise}
         </p>
 
-        <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl text-center">
             <div className="w-12 h-12 mx-auto mb-2 rounded-full flex items-center justify-center" 
                  style={{ backgroundColor: `${user.themeColor}20` }}>
-              <CheckCircleIcon className="w-6 h-6" style={{ color: user.themeColor }} />
+              <CheckCircleIcon className="w-6 h-6" color={user.themeColor} />
             </div>
             <p className="text-2xl font-bold text-gray-900 dark:text-white">
-              {summary.tasksCompleted}
+              {currentSummary.tasksCompleted}
             </p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Tasks Completed</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Tasks</p>
           </div>
 
           <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl text-center">
             <div className="w-12 h-12 mx-auto mb-2 rounded-full flex items-center justify-center"
                  style={{ backgroundColor: `${user.themeColor}20` }}>
-              <ClockIcon className="w-6 h-6" style={{ color: user.themeColor }} />
+              <ClockIcon className="w-6 h-6" color={user.themeColor} />
             </div>
             <p className="text-2xl font-bold text-gray-900 dark:text-white">
-              {formatTime(summary.focusTime)}
+              {currentSummary.completedPomodoros}
+            </p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              {currentSummary.completedPomodoros === 1 ? 'Pomodoro' : 'Pomodoros'}
+            </p>
+          </div>
+
+          <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl text-center">
+            <div className="w-12 h-12 mx-auto mb-2 rounded-full flex items-center justify-center"
+                 style={{ backgroundColor: `${user.themeColor}20` }}>
+              <CoffeeIcon className="w-6 h-6" color={user.themeColor} />
+            </div>
+            <p className="text-2xl font-bold text-gray-900 dark:text-white">
+              {formatTime(currentSummary.focusTime)}
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400">Focused</p>
           </div>
@@ -191,14 +284,16 @@ const EndDaySummary: React.FC<EndDaySummaryProps> = ({ user, onClose, dailyPlan 
           <div className="space-y-3">
             <div>
               <div className="flex justify-between text-sm mb-1">
-                <span className="text-gray-600 dark:text-gray-400">Estimated</span>
-                <span className="font-medium">{formatTime(summary.estimatedTime)}</span>
+                <span className="text-gray-600 dark:text-gray-400">
+                  Estimated ({currentSummary.estimatedPomodoros} pomo)
+                </span>
+                <span className="font-medium">{formatTime(currentSummary.estimatedTimeMinutes)}</span>
               </div>
               <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
                 <div 
                   className="h-full rounded-full"
                   style={{
-                    width: `${Math.min(100, (summary.estimatedTime / Math.max(summary.estimatedTime, 1)) * 100)}%`,
+                    width: `${Math.min(100, (currentSummary.estimatedTimeMinutes / Math.max(currentSummary.estimatedTimeMinutes, 1)) * 100)}%`,
                     backgroundColor: user.themeColor
                   }}
                 />
@@ -206,14 +301,16 @@ const EndDaySummary: React.FC<EndDaySummaryProps> = ({ user, onClose, dailyPlan 
             </div>
             <div>
               <div className="flex justify-between text-sm mb-1">
-                <span className="text-gray-600 dark:text-gray-400">Actual</span>
-                <span className="font-medium">{formatTime(summary.actualTime)}</span>
+                <span className="text-gray-600 dark:text-gray-400">
+                  Actual ({currentSummary.actualPomodoros} pomo)
+                </span>
+                <span className="font-medium">{formatTime(currentSummary.actualTimeMinutes)}</span>
               </div>
               <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
                 <div 
                   className="h-full rounded-full"
                   style={{
-                    width: `${Math.min(100, (summary.actualTime / Math.max(summary.estimatedTime, 1)) * 100)}%`,
+                    width: `${Math.min(100, (currentSummary.actualTime / Math.max(currentSummary.estimatedTime, 1)) * 100)}%`,
                     backgroundColor: user.themeColor
                   }}
                 />

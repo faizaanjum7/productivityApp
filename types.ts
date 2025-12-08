@@ -15,6 +15,7 @@ export interface Task {
   actualDuration: number; // ALWAYS in minutes
   environmentId?: string;
   actualPomodoros: number; // Number of pomodoros completed
+  isProcessing?: boolean; // Flag to show loading state for tasks being processed
 }
 
 export interface Routine {
@@ -43,6 +44,7 @@ export interface DailyPlan {
     mode: 'Timeflow' | 'Quota';
     unit: 'minutes' | 'pomodoros';
     tasks: Task[];
+    completedPomodoros: number; // Number of pomodoros completed today
 }
 
 export interface SessionLog {
@@ -69,5 +71,5 @@ export interface User {
   routines: Routine[];
   pomodoroHistory: PomodoroSession[];
   sessionLogs: SessionLog[];
-  praisePhrases: [string, string, string];
+  praisePhrases: string[];
 }
