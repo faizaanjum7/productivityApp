@@ -157,14 +157,46 @@ const EndDaySummary: React.FC<EndDaySummaryProps> = ({ user, onClose, dailyPlan 
       }
     }
 
-    // Calculate total estimated time in pomodoros and minutes
-    const estimatedPomodoros = filteredTasks.reduce(
-      (total, task) => total + Math.ceil((task.duration || 0) / 25), 0
+    // Calculate total estimated and actual time in pomodoros and minutes for completed tasks only
+    const completedTasks = filteredTasks.filter(task => task.completed);
+    
+    // For each completed task, log its details for debugging
+    console.log('Completed tasks analysis:');
+    completedTasks.forEach(task => {
+      console.log(`Task: ${task.text}`);
+      console.log(`- Duration: ${task.duration} ${dailyPlan?.unit === 'pomodoros' ? 'pomodoros' : 'mins'}`);
+      console.log(`- Actual pomodoros: ${task.actualPomodoros}`);
+    });
+    
+    // Calculate total estimated pomodoros (sum of estimated pomodoros for completed tasks)
+    const estimatedPomodoros = completedTasks.reduce(
+      (total, task) => {
+        // If the daily plan uses pomodoros as unit, use duration directly as pomodoros
+        // Otherwise, convert minutes to pomodoros (25 min per pomodoro)
+        const taskEstimatedPomodoros = dailyPlan?.unit === 'pomodoros' 
+          ? task.duration 
+          : Math.ceil((task.duration || 0) / 25);
+          
+        console.log(`Task estimated pomodoros: ${taskEstimatedPomodoros} (${dailyPlan?.unit === 'pomodoros' ? 'direct' : 'converted from ' + task.duration + ' mins'})`);
+        return total + (taskEstimatedPomodoros || 0);
+      }, 
+      0
     );
+    
+    // Calculate total actual pomodoros used (sum of actualPomodoros for completed tasks)
+    const actualPomodoros = completedTasks.reduce(
+      (total, task) => {
+        console.log(`Task actual pomodoros: ${task.actualPomodoros} for task: ${task.text}`);
+        return total + (task.actualPomodoros || 0);
+      }, 
+      0
+    );
+    
+    console.log(`Total estimated pomodoros: ${estimatedPomodoros}`);
+    console.log(`Total actual pomodoros: ${actualPomodoros}`);
+    
+    // Convert to minutes for display
     const estimatedTimeMinutes = estimatedPomodoros * 25;
-
-    // Calculate actual time in pomodoros and minutes
-    const actualPomodoros = completedPomodoros;
     const actualTimeMinutes = actualPomodoros * 25;
 
     // Calculate total focus time (from pomodoro history + current session)

@@ -233,60 +233,67 @@ const Dashboard: React.FC<DashboardProps> = (props) => {
             if(focusMode === 'pomodoro' && dailyPlanRef.current && activeFocusTaskId) {
                 const updatedPlanTasks = dailyPlanRef.current.tasks.map(t => {
                     if (t.id === activeFocusTaskId) {
-                        const newPomodoros = t.actualPomodoros + 1;
+                        const newPomodoros = (t.actualPomodoros || 0) + 1;
                         const completed = (t.duration && t.duration > 0) ? newPomodoros >= t.duration : t.completed;
-                        return { 
+                        const updatedTask = { 
                             ...t, 
-                            actualDuration: t.actualDuration + 25,
+                            actualDuration: (t.actualDuration || 0) + 25,
                             actualPomodoros: newPomodoros,
                             completed,
                         };
+                        return updatedTask;
                     }
                     return t;
                 });
-                updatePlan({ ...dailyPlanRef.current, tasks: updatedPlanTasks });
+                
+                // Update the plan with the new task states
+                const updatedPlan = { 
+                    ...dailyPlanRef.current, 
+                    tasks: updatedPlanTasks,
+                    completedPomodoros: (dailyPlanRef.current.completedPomodoros || 0) + 1
+                };
+                updatePlan(updatedPlan);
 
-                // If task reached completion (quota), also update the user's environment tasks so EndDaySummary counts it
+                // If task reached completion (quota), update the user's environment tasks
                 try {
-                  const finished = updatedPlanTasks.find(t => t.id === activeFocusTaskId && t.completed);
-                  if (finished && finished.environmentId) {
-                    const updatedEnvironments = user.environments.map(env => {
-                      if (env.id !== finished.environmentId) return env;
-                      const updatedEnvTasks = env.tasks.map(et => et.id === finished.id ? { ...et, completed: true } : et);
-                      return { ...env, tasks: updatedEnvTasks };
-                    });
-                    props.updateUser({ ...user, environments: updatedEnvironments });
-                  }
+                    const finishedTask = updatedPlanTasks.find(t => t.id === activeFocusTaskId);
+                    if (finishedTask && finishedTask.environmentId) {
+                        const updatedEnvironments = user.environments.map(env => {
+                            if (env.id !== finishedTask.environmentId) return env;
+                            const updatedEnvTasks = env.tasks.map(et => 
+                                et.id === finishedTask.id 
+                                    ? { ...et, 
+                                        actualPomodoros: finishedTask.actualPomodoros,
+                                        actualDuration: finishedTask.actualDuration,
+                                        completed: finishedTask.completed 
+                                      } 
+                                    : et
+                            );
+                            return { ...env, tasks: updatedEnvTasks };
+                        });
+                        props.updateUser({ ...user, environments: updatedEnvironments });
+                    }
                 } catch (e) {
-                  console.error('Error updating task completion status', e);
+                    console.error('Error updating task completion status', e);
                 }
 
-                // Increment completed pomodoros and update history
-                const newCompletedPomodoros = completedPomodoros + 1;
-                setCompletedPomodoros(newCompletedPomodoros);
-                
                 // Add to pomodoro history
                 const newPomodoroSession = {
-                  id: `pomodoro-${Date.now()}`,
-                  date: new Date().toISOString(),
-                  duration: 25, // 25 minutes per pomodoro
-                  taskId: activeFocusTaskId || null
+                    id: `pomodoro-${Date.now()}`,
+                    date: new Date().toISOString(),
+                    duration: 25, // 25 minutes per pomodoro
+                    taskId: activeFocusTaskId || null
                 };
                 
-                // Update user's pomodoro history
+                // Update user's pomodoro history and sync state
                 const updatedUser = {
-                  ...user,
-                  pomodoroHistory: [...user.pomodoroHistory, newPomodoroSession]
+                    ...user,
+                    pomodoroHistory: [...(user.pomodoroHistory || []), newPomodoroSession]
                 };
                 props.updateUser(updatedUser);
                 
-                // Update daily plan with completed pomodoros
-                if (dailyPlanRef.current) {
-                  updatePlan({
-                    ...dailyPlanRef.current,
-                    completedPomodoros: newCompletedPomodoros
-                  });
-                }
+                // Update local state to reflect the new count
+                setCompletedPomodoros(prev => prev + 1);
                 
                 const nextCycle = pomodoroCycle + 1;
                 setPomodoroCycle(nextCycle);
