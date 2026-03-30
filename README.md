@@ -1,4 +1,4 @@
-# ✨ skylar productivity app
+# 🌙 skylar productivity app
 
 a smart productivity app that generates flexible or structured workflows based on user tasks, combining time management with ai-assisted development.
 
